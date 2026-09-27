@@ -151,6 +151,10 @@ class FastX:
             self.lib.XDestroyImage(xi)
         return buf, bpl, depth
 
+    def grab(self, x, y, w, h):
+        """抓取 root 区域, 返回 (像素数据, 每行字节数)."""
+        return self.grab_window(self.root, x, y, w, h)
+
     def get_geometry(self, drawable):
         """XGetGeometry: 返回 (x, y, w, h) 或 None(窗口已销毁)."""
         lib = self.lib
