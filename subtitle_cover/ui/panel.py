@@ -199,7 +199,7 @@ class ControlPanel(Gtk.Window):
 
     def _on_close(self, *a):
         self.hide()
-        self.app._update_bar_stacking()   # 兼容保留: 无副作用
+        # 面板关闭: 遮挡条带轮廓提示回归(用户通过标题栏按钮/Esc关闭时)
         self.app.on_panel_closed()
         return True
 

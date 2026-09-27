@@ -79,7 +79,6 @@ class NotesPopup(Gtk.Window):
         if event.keyval == Gdk.KEY_Escape:
             self.app.notes_popup = None
             self.destroy()
-            self.app._update_bar_stacking()
             return True
         return False
 
@@ -125,7 +124,6 @@ class NotesPopup(Gtk.Window):
     def _on_close(self, *a):
         self.app.notes_popup = None
         self.destroy()
-        self.app._update_bar_stacking()
         return True
 
 
@@ -199,5 +197,4 @@ class NotesViewer(Gtk.Window):
     def _on_close(self, *a):
         self.app.notes_viewer = None
         self.destroy()
-        self.app._update_bar_stacking()
         return True
