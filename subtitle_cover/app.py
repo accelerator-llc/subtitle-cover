@@ -542,9 +542,9 @@ class App:
         if self.panel is None:
             self.panel = ControlPanel(self)
         if self.panel.get_visible():
-            self.panel.hide()
-            # 面板关闭: 遮挡条回栈顶(恢复对一切窗口的最高优先)
-            self.bar.raise_top()
+            # 已打开: 提到最前(右键不再翻转开关, 避免连续右键把面板关掉)
+            self.panel.present()
+            GLib.timeout_add(120, self._update_bar_stacking)
             return
         self.panel.sync_from_config()
         # 打开面板: 不隐藏遮挡条 —— 用户需要边看面板边拖动调整位置.
