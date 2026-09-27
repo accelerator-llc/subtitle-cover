@@ -531,7 +531,7 @@ class CoverBar:
         if gw <= 0 or gh <= 0:
             return None
         try:
-            data, bpl = self.fastx.grab(gx, gy, gw, gh)
+            data, bpl, _depth = self.fastx.grab(gx, gy, gw, gh)
             return data, bpl, gw, gh, gx, gy
         except (RuntimeError, OSError):
             return None
