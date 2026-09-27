@@ -282,6 +282,16 @@ class CoverBar:
             # 暂停实时模糊与屏幕抓取, 消除"模糊内容延迟跟随"的廉价感;
             # 释放鼠标后恢复实时模糊, 并触发轮廓渐隐提示完成视觉过渡.
             if self.interactive:
+                # 防卡死: release 事件偶发丢失会让交互状态永久卡住,
+                # 这里直接查询 X server 的真实按键状态, 左键已松
+                # 就自动退出交互模式
+                try:
+                    btns = self.fastx.pointer_buttons()
+                    if not btns & 0x100:            # Button1Mask
+                        self.interactive = False
+                        self.drag_end_cleanup()
+                except (RuntimeError, OSError):
+                    pass
                 canvas = Image.new('RGB', (w, h),
                                    tuple(cfg['tint_color']))
                 phase = int(time.monotonic() * 10) % 8
@@ -467,6 +477,15 @@ class CoverBar:
         diff = target - self.peek_factor
         self.peek_factor = target if abs(diff) < 0.08 \
             else self.peek_factor + diff * 0.45
+
+    def drag_end_cleanup(self):
+        """交互结束的公共清理: 保存配置 + 轮廓提示.
+
+        主线程(release 事件)与渲染线程(防卡死兜底)都会调用."""
+        from ..core.config import save_config
+        save_config(self.cfg)
+        if not self.peeking:
+            self.show_hint()
 
     def _decode(self, data, gw, gh, bpl, has_alpha=False):
         """把 ZPixmap 原始数据解成 PIL 图.

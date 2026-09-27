@@ -11,6 +11,11 @@ python-xlib 连接, 两者不共享, 避免 libX11 非线程安全问题.
 """
 
 import ctypes
+import os
+
+
+def _os_exit(code):
+    os._exit(code)
 
 
 class FastX:
@@ -20,6 +25,8 @@ class FastX:
     # X 错误回调类型: int (*)(Display*, XErrorEvent*)
     XErrorCallback = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p,
                                       ctypes.c_void_p)
+    # IO 错误回调: int (*)(Display*)
+    XIOErrorHandler = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p)
 
     class _XImage(ctypes.Structure):
         # 对应 X11/Xlib.h 的 XImage(前 15 个字段, x64 布局)
@@ -82,6 +89,21 @@ class FastX:
         lib.XSetErrorHandler.argtypes = [self._err_cb.__class__]
         lib.XSetErrorHandler.restype = ctypes.c_int
         lib.XSetErrorHandler(self._err_cb)
+        # XIO 错误处理器: 连接致命错误时打印并退出 —— libX11 默认行为
+        # 是直接 exit(0) 且无任何输出, 排查问题会一头雾水
+        self.io_error = False
+
+        def _xio_handler():
+            self.io_error = True
+            import sys as _sys
+            print('X 连接发生致命 IO 错误, 程序退出. '
+                  '(如反复出现请到项目 issue 反馈)', file=_sys.stderr)
+            _os_exit(1)
+
+        self._io_cb = self.XIOErrorHandler(_xio_handler)
+        lib.XSetIOErrorHandler.argtypes = [self._io_cb.__class__]
+        lib.XSetIOErrorHandler.restype = ctypes.c_int
+        lib.XSetIOErrorHandler(self._io_cb)
         # 服务器像素参数(首次抓取后从返回的 XImage 中学习)
         self.byte_order = 0        # LSBFirst
         self.bitmap_pad = 32
@@ -181,6 +203,31 @@ class FastX:
                                          ctypes.byref(child)):
             return None
         return dx.value, dy.value
+
+    def pointer_buttons(self):
+        """返回当前鼠标按键掩码(渲染线程防交互卡死用)."""
+        lib = self.lib
+        lib.XQueryPointer.argtypes = [ctypes.c_void_p, ctypes.c_uint32,
+                                      ctypes.POINTER(ctypes.c_uint32),
+                                      ctypes.POINTER(ctypes.c_uint32),
+                                      ctypes.POINTER(ctypes.c_int),
+                                      ctypes.POINTER(ctypes.c_int),
+                                      ctypes.POINTER(ctypes.c_int),
+                                      ctypes.POINTER(ctypes.c_uint),
+                                      ctypes.POINTER(ctypes.c_uint)]
+        lib.XQueryPointer.restype = ctypes.c_int
+        r_ret = ctypes.c_uint32(); c_ret = ctypes.c_uint32()
+        rx, ry = ctypes.c_int(), ctypes.c_int()
+        wx, wy = ctypes.c_int(), ctypes.c_int()
+        mask = ctypes.c_uint()
+        ok = lib.XQueryPointer(self.dpy, self.root,
+                               ctypes.byref(r_ret), ctypes.byref(c_ret),
+                               ctypes.byref(rx), ctypes.byref(ry),
+                               ctypes.byref(wx), ctypes.byref(wy),
+                               ctypes.byref(mask))
+        if not ok:
+            return 0
+        return mask.value
 
     def put(self, win, data, w, h, bpl):
         """把像素数据写回窗口(Xlib 内部自动处理请求分块)."""
