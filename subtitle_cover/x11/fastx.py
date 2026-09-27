@@ -213,7 +213,7 @@ class FastX:
                                       ctypes.POINTER(ctypes.c_int),
                                       ctypes.POINTER(ctypes.c_int),
                                       ctypes.POINTER(ctypes.c_int),
-                                      ctypes.POINTER(ctypes.c_uint),
+                                      ctypes.POINTER(ctypes.c_int),
                                       ctypes.POINTER(ctypes.c_uint)]
         lib.XQueryPointer.restype = ctypes.c_int
         r_ret = ctypes.c_uint32(); c_ret = ctypes.c_uint32()

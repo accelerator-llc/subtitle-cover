@@ -144,7 +144,18 @@ class App:
         if not self.running:
             return False
         try:
-            while self.dpy.pending_events():
+            n = self.dpy.pending_events()   # 内部会做一次 send/recv 读 socket
+            self._poll_n = getattr(self, '_poll_n', 0) + 1
+            import os
+            if os.environ.get('SC_DEBUG'):
+                # 心跳: 每 ~1.6s 打印一次, 证明主循环活着
+                if self._poll_n % 50 == 0:
+                    print('[心跳] poll#%d pending=%d' % (self._poll_n, n),
+                          file=sys.stderr)
+                if n:
+                    print('[调试] poll#%d 收到 %d 个事件' % (self._poll_n, n),
+                          file=sys.stderr)
+            for _ in range(n):
                 ev = self.dpy.next_event()
                 self._handle_x_event(ev)
         except DisplayError:
@@ -421,6 +432,7 @@ class App:
         self.cfg['locked'] = bool(locked)
         save_config(self.cfg)
         self.bar.set_locked(self.cfg['locked'], self.cfg['w'], self.cfg['h'])
+        self._update_bar_opacity()
         self.tray.sync()
         if self.panel:
             self.panel.sync_from_config()
@@ -563,9 +575,21 @@ class App:
                 self.bar.win.configure(stack_mode=X.Below, sibling=sibling)
             else:
                 self.bar.raise_top()
+            self._update_bar_opacity()
             self.dpy.flush()
         except XError:
             pass
+
+    def _update_bar_opacity(self):
+        """遮挡条整窗透明度: 锁定(穿透)时 70%, 弹窗打开时 55%, 平时 100%.
+        让"锁定中"有肉眼可见的状态区分, 避免用户忘记自己锁过."""
+        if self.cfg.get('locked'):
+            self.bar.set_opacity(0.7)
+        elif any(p is not None and p.get_visible()
+                 for p in (self.panel, self.notes_popup, self.notes_viewer)):
+            self.bar.set_opacity(0.55)
+        else:
+            self.bar.set_opacity(1.0)
 
     def _maintain_stacking(self):
         """周期性维持弹窗栈序(mutter 激活弹窗时会 raise 它)."""

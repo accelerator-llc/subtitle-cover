@@ -169,9 +169,10 @@ class CoverBar:
         try:
             opacity = clamp(int(clamp(opacity, 0.0, 1.0) * 0xFFFFFFFF),
                             0, 0xFFFFFFFF)
+            from Xlib import Xatom
             self.win.change_property(
                 self.dpy.intern_atom('_NET_WM_WINDOW_OPACITY'),
-                X.XA_CARDINAL, 32, [opacity])
+                Xatom.CARDINAL, 32, [opacity])
             self.dpy.flush()
         except XError:
             pass
