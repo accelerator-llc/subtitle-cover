@@ -124,6 +124,7 @@ class NotesPopup(Gtk.Window):
     def _on_close(self, *a):
         self.app.notes_popup = None
         self.destroy()
+        self.app.bar.raise_top()
         return True
 
 
@@ -197,4 +198,5 @@ class NotesViewer(Gtk.Window):
     def _on_close(self, *a):
         self.app.notes_viewer = None
         self.destroy()
+        self.app.bar.raise_top()
         return True

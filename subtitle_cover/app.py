@@ -84,6 +84,8 @@ class App:
         self.render_thread.start()
         # 周期刷新下方窗口缓存(窗口切换/移动时渲染源跟随)
         GLib.timeout_add(500, self._refresh_below_tick)
+        # 维持弹窗栈序: 面板/便签打开期间持续把遮挡条压到其正下方
+        GLib.timeout_add(500, self._maintain_stacking)
 
     # ================================================================ 热键
     def _grab_hotkeys(self):
@@ -460,10 +462,8 @@ class App:
         save_config(self.cfg)
 
     def on_panel_closed(self):
-        """面板关闭(隐藏按钮/Esc)时恢复遮挡条显示."""
-        if self.cfg['visible'] and not self.locked_now:
-            self.bar.show()
-            self.bar.raise_top()
+        """面板关闭(标题栏按钮/Esc)时遮挡条回栈顶."""
+        self.bar.raise_top()
 
     # -------------------------------------------------- 位置预设
     def save_preset(self, name=None):
@@ -527,26 +527,49 @@ class App:
             self.panel = ControlPanel(self)
         if self.panel.get_visible():
             self.panel.hide()
-            # 关闭面板: 遮挡条带轮廓提示回归(用户配置了显示才恢复)
-            if self.cfg['visible'] and not self.locked_now:
-                self.bar.show()
-                self.bar.raise_top()
+            # 面板关闭: 遮挡条回栈顶(恢复对一切窗口的最高优先)
+            self.bar.raise_top()
             return
         self.panel.sync_from_config()
-        # 打开面板: 隐藏遮挡条, 保证面板永远完整可见不被遮挡
-        self.bar.hide()
-        # 初始位置: 鼠标附近(逻辑坐标)
+        # 打开面板: 不隐藏遮挡条 —— 用户需要边看面板边拖动调整位置.
         scale = max(1, self.root_w / max(1, self._gtk_screen_width()))
-        if root_x is not None:
-            gx = max(8, min(root_x // scale,
-                            self._gtk_screen_width() - 440))
-            gy = max(8, min(root_y // scale,
-                            self._gtk_screen_height() - 200))
-        else:
-            gx, gy = 60, 60
         self.panel.move(int(gx), int(gy))
         self.panel.show_all()
         self.panel.present()
+        # 面板弹出后把遮挡条压到面板正下方(仍高于其他所有窗口):
+        # 面板完整可见, 遮挡效果保持, 且可以实时拖动调整
+        GLib.timeout_add(120, self._update_bar_stacking)
+
+    def _update_bar_stacking(self):
+        """面板/便签可见时, 把遮挡条压到其正下方 —— 面板完整可见、
+        用户可同时拖动遮挡条调整位置, 遮挡条对其他窗口的置顶保持;
+        弹窗全部关闭后回栈顶.
+
+        sibling 必须与遮挡条同为 root 的子窗口: 被 mutter reparent
+        进 frame 的窗口要取其 frame, 否则 BadMatch."""
+        visible = [p for p in (self.panel, self.notes_popup, self.notes_viewer)
+                   if p is not None and p.get_visible()]
+        try:
+            if visible:
+                top = visible[-1]   # 最近弹出的弹窗
+                xid = top.get_window().get_xid()
+                xw = self.dpy.create_resource_object('window', xid)
+                parent = xw.query_tree().parent
+                sibling = xid if parent.id == self.root.id else parent.id
+                self.bar.win.configure(stack_mode=X.Below, sibling=sibling)
+            else:
+                self.bar.raise_top()
+            self.dpy.flush()
+        except XError:
+            pass
+
+    def _maintain_stacking(self):
+        """周期性维持弹窗栈序(mutter 激活弹窗时会 raise 它)."""
+        try:
+            self._update_bar_stacking()
+        except XError:
+            pass
+        return True
 
     def _gtk_screen_width(self):
         """GTK 逻辑屏幕宽(GDK 在 HiDPI 下报逻辑分辨率)."""

@@ -199,8 +199,8 @@ class ControlPanel(Gtk.Window):
 
     def _on_close(self, *a):
         self.hide()
-        # 面板关闭: 遮挡条带轮廓提示回归(用户通过标题栏按钮/Esc关闭时)
-        self.app.on_panel_closed()
+        # 面板关闭: 遮挡条回栈顶
+        self.app.bar.raise_top()
         return True
 
     def _on_visible(self, sw, state):
