@@ -312,8 +312,8 @@ class App:
             self._mid_press_time = time.monotonic()
             self.bar.peeking = True
         elif detail == 3:
-            # 右键: 控制面板
-            self.toggle_panel(ev.root_x, ev.root_y)
+            # 右键: 显示面板(只开不关, 关闭用 Esc/标题栏/Ctrl+Alt+C)
+            self.show_panel(ev.root_x, ev.root_y)
         elif detail in (4, 5):
             # 滚轮: 高度 / Shift:宽度 / Ctrl:模糊度
             step = -1 if detail == 4 else 1
@@ -534,17 +534,18 @@ class App:
 
     # -------------------------------------------------- 弹窗与遮挡条的栈序
     def toggle_panel(self, root_x=None, root_y=None):
-        import os
-        if os.environ.get('SC_DEBUG'):
-            print('[调试] toggle_panel 进入', file=sys.stderr)
+        """Ctrl+Alt+C: 面板开/关切换."""
+        if self.panel is not None and self.panel.get_visible():
+            self.panel.hide()
+            # 面板关闭: 遮挡条回栈顶
+            self.bar.raise_top()
+            return
+        self.show_panel(root_x, root_y)
+
+    def show_panel(self, root_x=None, root_y=None):
+        """右键: 显示面板(幂等 —— 已开则提到最前, 永不关闭)."""
         if self.panel is None:
             self.panel = ControlPanel(self)
-        if self.panel.get_visible():
-            # 已打开: 提到最前(右键不再翻转开关, 避免连续右键把面板关掉)
-            self.panel.present()
-            GLib.timeout_add(120, self._update_bar_stacking)
-            return
-        self.panel.sync_from_config()
         # 打开面板: 不隐藏遮挡条 —— 用户需要边看面板边拖动调整位置.
         scale = max(1, self.root_w / max(1, self._gtk_screen_width()))
         if root_x is not None:
