@@ -321,9 +321,6 @@ class CoverBar:
                 return
 
             blur = cfg['blur']
-            # 临时透视: 模糊强度按渐变系数衰减, 视觉上平滑"看清"
-            if self.peeking:
-                blur = int(blur * self.peek_factor)
             pad = 0
             if blur > 0:
                 pad = min(64, int(blur * 2))
@@ -358,8 +355,7 @@ class CoverBar:
 
                 # 静止跳过; 但透视渐变/截图请求期间需渲染
                 if data == self._last_raw and not (
-                        (0.001 < self.peek_factor < 0.999)
-                        or self.shot_request or hint_on):
+                        self.shot_request or hint_on):
                     continue
                 self._last_raw = data
                 img = self._decode(data, gw, gh, bpl, has_alpha)
@@ -501,14 +497,6 @@ class CoverBar:
                       min(gw, x - gx + w), min(gh, y - gy + h))).save(path)
         except (OSError, ValueError) as e:
             print('截图保存失败:', e, file=sys.stderr)
-
-    def update_peek(self):
-        """渲染线程每帧调用: peek_factor 向目标值(按住 0 / 松开 1)收敛,
-        实现"呼吸式"的模糊 <-> 清晰过渡."""
-        target = 0.0 if self.peeking else 1.0
-        diff = target - self.peek_factor
-        self.peek_factor = target if abs(diff) < 0.08 \
-            else self.peek_factor + diff * 0.45
 
     def drag_end_cleanup(self):
         """交互结束的公共清理: 保存配置 + 轮廓提示.

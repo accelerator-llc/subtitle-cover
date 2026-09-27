@@ -233,7 +233,10 @@ class App:
         key_peek = self.dpy.keysym_to_keycode(
             ord(self.cfg.get('peek_key', 'o')))
         if ev.detail == key_peek:
-            self.bar.peeking = False   # 松开: 渐变回磨砂
+            self.bar.peeking = False
+            # 松开: 遮挡条带磨砂回归(不触发轮廓提示, 用户刚看过背景)
+            if self.cfg['visible'] and not self.locked_now:
+                self.bar.show(hint=False)
 
     # -------------------------------------------------- 鼠标交互
     def _edge_at(self, ev, w, h):
@@ -308,9 +311,9 @@ class App:
                 except XError:
                     pass
         elif detail == 2:
-            # 中键: 按住临时透视; 快速单击则切换锁定
-            self._mid_press_time = time.monotonic()
+            # 中键按住: 透视(遮挡条消失, 直接看真实画面)
             self.bar.peeking = True
+            self.bar.hide()
         elif detail == 3:
             # 右键: 显示面板(只开不关, 关闭用 Esc/标题栏/Ctrl+Alt+C)
             self.show_panel(ev.root_x, ev.root_y)
@@ -352,8 +355,10 @@ class App:
             if self.panel:
                 self.panel.sync_from_config()
         elif ev.detail == 2:
-            # 中键松开: 结束透视; 按住 <300ms 视为单击 => 切换锁定
+            # 中键松开: 遮挡条带磨砂回归
             self.bar.peeking = False
+            if self.cfg['visible'] and not self.locked_now:
+                self.bar.show(hint=False)
             if self._mid_press_time and \
                     time.monotonic() - self._mid_press_time < 0.3:
                 self.set_locked(not self.cfg['locked'])

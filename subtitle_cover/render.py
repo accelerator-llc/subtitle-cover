@@ -33,11 +33,10 @@ class RenderThread(threading.Thread):
             cfg = self.app.cfg
             fps = max(2, cfg.get('fps', 15))
             t0 = time.monotonic()
-            if cfg.get('visible') and not self.app.locked_now:
+            if (cfg.get('visible') and not self.app.locked_now
+                    and not bar.peeking):
                 try:
                     bar = self.app.bar
-                    # 每帧都让透视系数向目标值收敛(按住->0, 松开->1)
-                    bar.update_peek()
                     before = bar._last_raw
                     bar.render(cfg)
                     # 静止检测: 本帧数据与上帧相同即视为静止
