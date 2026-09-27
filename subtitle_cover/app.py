@@ -58,10 +58,9 @@ class App:
         self._grab_hotkeys()
         self._watch_root_events()
 
-        # 把 X socket 并入 GLib 主循环
-        ch = GLib.IOChannel.unix_new(self.dpy.fileno())
-        GLib.io_add_watch(ch, GLib.PRIORITY_DEFAULT, GLib.IO_IN,
-                          self._on_x_readable)
+        # X 事件轮询(30ms): 修复主线程 roundtrip 把 X 事件读进内部缓冲
+        # 后 fd 监听永不触发、事件永久滞留导致的"全部交互无响应"
+        GLib.timeout_add(30, self._poll_x_events)
 
         # 面板与笔记窗口按需创建
         self.panel = None
@@ -135,9 +134,14 @@ class App:
                   file=sys.stderr)
 
     # ================================================================ X 事件
-    def _on_x_readable(self, src, cond):
-        if cond & (GLib.IO_HUP | GLib.IO_ERR):
-            self.quit()
+    def _poll_x_events(self):
+        """主动排空 X 事件队列(30ms 轮询).
+
+        不用 fd 监听的原因: 主线程的同步查询(roundtrip)会把同时到达的
+        X 事件读进 python-xlib 内部缓冲, 之后 socket 无新数据, fd 监听
+        永远不再触发, 事件永久滞留 => 热键/右键全部无响应(程序假死).
+        固定间隔主动排水则没有任何滞留可能."""
+        if not self.running:
             return False
         try:
             while self.dpy.pending_events():
