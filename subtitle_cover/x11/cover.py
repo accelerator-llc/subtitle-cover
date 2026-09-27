@@ -519,6 +519,23 @@ class CoverBar:
         if not self.peeking:
             self.show_hint()
 
+    def _grab_root(self, x, y, w, h, pad):
+        """回退: 抓 root 快照(区域 clamp 在屏幕内; 仅 fastx)."""
+        if self.fastx is None:
+            return None
+        gx = max(0, x - pad)
+        gy = max(0, y - pad)
+        gx2 = min(self.root_w, x + w + pad)
+        gy2 = min(self.root_h, y + h + pad)
+        gw, gh = gx2 - gx, gy2 - gy
+        if gw <= 0 or gh <= 0:
+            return None
+        try:
+            data, bpl = self.fastx.grab(gx, gy, gw, gh)
+            return data, bpl, gw, gh, gx, gy
+        except (RuntimeError, OSError):
+            return None
+
     def _decode(self, data, gw, gh, bpl, has_alpha=False):
         """把 ZPixmap 原始数据解成 PIL 图.
 
