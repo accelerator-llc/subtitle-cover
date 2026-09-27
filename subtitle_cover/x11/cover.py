@@ -112,10 +112,12 @@ class CoverBar:
         # 临时透视状态: True 时渲染输出改为清晰透传(渲染线程读取)
         self.peeking = False
 
-        # 交互状态: 拖动移动/边缘调整期间为 True —— 渲染切换为
-        # 纯色实底 + 常亮轮廓, 暂停实时模糊与屏幕抓取,
-        # 避免看到"延迟跟随的模糊"的廉价感; 释放后恢复.
-        self.interactive = False
+        # 纯色模式: 任何几何变化(拖动/手柄/滚轮/面板/预设)都会刷新
+        # solid_until —— 变化期间渲染纯色实底 + 常亮轮廓, 暂停实时模糊
+        # 与屏幕抓取(避免"延迟跟随的模糊"的廉价感); 变化停止 0.8s 后
+        # 自动恢复磨砂并触发轮廓渐隐提示.
+        self.interactive = False       # 按住左键拖动/调整中
+        self.solid_until = 0.0         # 纯色模式的截止时间(单调钟)
 
         # 轮廓提示: 显示/恢复时在边缘画数秒蚂蚁线, 防止纯色背景下
         # 磨砂条与背景融为一体找不到. _hint_start=0 表示未激活.
@@ -140,6 +142,8 @@ class CoverBar:
         self.pending_geo = (int(x), int(y), w, h)
         self._wh = (w, h)
         self.cfg_pos = (x, y)
+        # 任何几何变化都进入纯色模式(去抖 0.8s)
+        self.solid_until = time.monotonic() + 0.8
 
     def raise_top(self):
         """把遮挡条压到 X 栈顶, 保证盖住一切(含全屏窗口)."""
@@ -279,9 +283,10 @@ class CoverBar:
             if w <= 0 or h <= 0:
                 return
 
-            # ---- 交互模式: 拖动/调整期间用纯色实底 + 常亮轮廓 ----
-            # 暂停实时模糊与屏幕抓取, 消除"模糊内容延迟跟随"的廉价感;
-            # 释放鼠标后恢复实时模糊, 并触发轮廓渐隐提示完成视觉过渡.
+            # ---- 纯色模式: 任何几何变化(拖动/手柄/滚轮/面板/预设)
+            # 期间用纯色实底 + 常亮轮廓, 暂停实时模糊与屏幕抓取, 消除
+            # "模糊内容延迟跟随"的廉价感; 变化停止 0.8s 后自动恢复磨砂
+            # 并触发轮廓渐隐提示完成视觉过渡.
             if self.interactive:
                 # 防卡死: release 事件偶发丢失会让交互状态永久卡住,
                 # 这里直接查询 X server 的真实按键状态, 左键已松
@@ -290,9 +295,10 @@ class CoverBar:
                     btns = self.fastx.pointer_buttons()
                     if not btns & 0x100:            # Button1Mask
                         self.interactive = False
-                        self.drag_end_cleanup()
                 except (RuntimeError, OSError):
                     pass
+            solid = self.interactive or time.monotonic() < self.solid_until
+            if solid:
                 canvas = Image.new('RGB', (w, h),
                                    tuple(cfg['tint_color']))
                 phase = int(time.monotonic() * 10) % 8
@@ -304,6 +310,14 @@ class CoverBar:
                 out = canvas.tobytes('raw', 'BGRX', w * 4)
                 if self.fastx is not None:
                     self.fastx.put(self.win.id, out, w, h, w * 4)
+                # 纯色模式结束(非拖动按住的自然超时): 保存配置并
+                # 触发轮廓渐隐提示, 视线从纯色+轮廓平滑过渡回磨砂
+                if not self.interactive and \
+                        time.monotonic() >= self.solid_until:
+                    from ..core.config import save_config as _sc
+                    _sc(self.cfg)
+                    self.show_hint()
+                    self.solid_until = 0.0
                 return
 
             blur = cfg['blur']
@@ -393,7 +407,24 @@ class CoverBar:
                         sharp_canvas.paste(img.crop(crop_box), off)
 
             if blur_canvas is None:
-                    return  # 下方无可抓内容(全部静止或窗口消失)
+                # 所有层都被 alpha 过滤(如纯透明的桌面覆盖层)或无层:
+                # 回退 root 快照 —— 壁纸/桌面是静态内容, 快照滞后无碍
+                grabbed = self._grab_root(x, y, w, h, pad)
+                if grabbed is None:
+                    return
+                data, bpl, gw, gh, gx, gy = grabbed
+                img = self._decode(data, gw, gh, bpl)
+                if img is None:
+                    return
+                img = BlurPipeline.gaussian(img, blur)
+                img = BlurPipeline.post_process(
+                    img, cfg['tint_color'], cfg['tint_alpha'], cfg['noise'])
+                blur_canvas = Image.new('RGB', (w, h), (24, 24, 24))
+                blur_canvas.paste(
+                    img.crop((max(0, x - gx), max(0, y - gy),
+                              min(gx + gw, x + w) - gx,
+                              min(gy + gh, y + h) - gy)),
+                    (max(0, x - gx), max(0, y - gy)))
             if feather > 0 and sharp_canvas is not None:
                 canvas = BlurPipeline.compose_feather(blur_canvas,
                                                       sharp_canvas, feather)

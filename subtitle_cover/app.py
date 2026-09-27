@@ -329,9 +329,7 @@ class App:
     def _on_button_release(self, ev):
         if ev.detail == 1:
             self.bar.interactive = False
-            # 释放后触发轮廓提示: 视线从纯色+轮廓自然过渡回磨砂
-            if self.cfg['visible'] and not self.locked_now:
-                self.bar.show_hint()
+            # 轮廓渐隐提示由纯色模式结束(0.8s 去抖)统一触发
             if getattr(self, 'resize', None):
                 self.resize = None
                 save_config(self.cfg)
@@ -549,6 +547,13 @@ class App:
         self.panel.sync_from_config()
         # 打开面板: 不隐藏遮挡条 —— 用户需要边看面板边拖动调整位置.
         scale = max(1, self.root_w / max(1, self._gtk_screen_width()))
+        if root_x is not None:
+            gx = max(8, min(root_x // scale,
+                            self._gtk_screen_width() - 440))
+            gy = max(8, min(root_y // scale,
+                            self._gtk_screen_height() - 200))
+        else:
+            gx, gy = 60, 60
         self.panel.move(int(gx), int(gy))
         self.panel.show_all()
         self.panel.present()
