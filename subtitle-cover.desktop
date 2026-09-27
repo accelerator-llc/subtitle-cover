@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=字幕遮挡条
+Name[en]=Subtitle Cover
+Comment=用磨砂遮挡条盖住中文双语字幕行(置顶, 含全屏)
+Comment[en]=Frosted cover bar to hide the Chinese subtitle line (always on top)
+Exec=python3 /home/accelerator/projects/subtitle-cover/run.py
+Path=/home/accelerator/projects/subtitle-cover
+Icon=preferences-desktop-wallpaper
+Terminal=false
+Categories=Utility;
+StartupNotify=false
+X-GNOME-Autostart-enabled=false
