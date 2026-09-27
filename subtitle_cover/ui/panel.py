@@ -20,6 +20,7 @@ class ControlPanel(Gtk.Window):
         self.set_keep_above(True)
         self.set_resizable(False)
         self.connect('delete-event', self._on_close)
+        self.connect('key-press-event', self._on_key)
 
         grid = Gtk.Grid(column_spacing=10, row_spacing=8, margin=12)
         self.add(grid)
@@ -188,9 +189,18 @@ class ControlPanel(Gtk.Window):
     def _synced(self):
         return getattr(self, '_syncing', False)
 
+    def _on_key(self, w, event):
+        """Esc 关闭面板(遮挡条会带轮廓提示回归)."""
+        from gi.repository import Gdk
+        if event.keyval == Gdk.KEY_Escape:
+            self._on_close()
+            return True
+        return False
+
     def _on_close(self, *a):
         self.hide()
-        self.app._update_bar_stacking()   # 面板关闭后遮挡条回栈顶
+        self.app._update_bar_stacking()   # 兼容保留: 无副作用
+        self.app.on_panel_closed()
         return True
 
     def _on_visible(self, sw, state):

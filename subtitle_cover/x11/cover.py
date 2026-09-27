@@ -49,12 +49,16 @@ class CoverBar:
             from ..core.config import save_config
             save_config(cfg)
 
+        # 窗口背景色跟随色调颜色: resize 扩大的新区域在图像铺满前
+        # 显示背景色, 若为黑色会与纯色模式来回闪跳(实测); 与纯色一致则无缝
+        r, g, b = cfg['tint_color']
+        bg_pixel = (r << 16) | (g << 8) | b
         self.win = self.root.create_window(
             cfg['x'], cfg['y'], cfg['w'], cfg['h'],
             border_width=0, depth=self.depth,
             window_class=X.InputOutput, visual=X.CopyFromParent,
             override_redirect=True,          # 关键: 绕过窗口管理器
-            background_pixel=0x101010,
+            background_pixel=bg_pixel,
             event_mask=(X.ButtonPressMask | X.ButtonReleaseMask |
                         X.PointerMotionMask | X.ExposureMask))
         self.gc = self.win.create_gc()
@@ -100,6 +104,11 @@ class CoverBar:
         # 当前位置缓存(主线程维护), 供主线程查找下方窗口时使用
         self.cfg_pos = (cfg['x'], cfg['y'])
 
+        # 待应用的几何(主线程写入, 渲染线程在同一 fastx 连接内
+        # 先 move/resize 再 put —— 同连接顺序由 X 协议保证,
+        # 彻底消除 resize 时窗口尺寸与图像尺寸不一致的黑闪)
+        self.pending_geo = None
+
         # 临时透视状态: True 时渲染输出改为清晰透传(渲染线程读取)
         self.peeking = False
 
@@ -121,19 +130,48 @@ class CoverBar:
         self.shot_request = None
 
     # -------------------------------------------------- 几何/状态操作
-    def move_resize(self, x, y, w, h):
-        """调整窗口位置尺寸(带边界保护)."""
+    def request_geometry(self, x, y, w, h):
+        """请求调整窗口位置尺寸(主线程调用).
+
+        不直接 configure, 而是登记为待处理几何, 由渲染线程在同一
+        fastx 连接内先应用几何再写图, 保证两者顺序一致."""
         w = clamp(w, MIN_W, max(MIN_W, self.root_w * 2))
         h = clamp(h, MIN_H, max(MIN_H, self.root_h))
-        self.win.configure(x=x, y=y, width=w, height=h)
+        self.pending_geo = (int(x), int(y), w, h)
         self._wh = (w, h)
         self.cfg_pos = (x, y)
-        self.dpy.flush()
 
     def raise_top(self):
         """把遮挡条压到 X 栈顶, 保证盖住一切(含全屏窗口)."""
         try:
             self.win.configure(stack_mode=X.Above)
+            self.dpy.flush()
+        except XError:
+            pass
+
+    def set_background_color(self, rgb):
+        """更新窗口背景色(主线程调用).
+
+        resize 变大时新暴露的区域先显示背景色, 与交互纯色保持一致
+        才不会闪黑."""
+        r, g, b = rgb
+        try:
+            self.win.change_attributes(
+                background_pixel=(r << 16) | (g << 8) | b)
+            self.dpy.flush()
+        except XError:
+            pass
+
+    def set_opacity(self, opacity):
+        """设置整窗不透明度 0.0~1.0 (mutter 支持 _NET_WM_WINDOW_OPACITY).
+
+        主线程调用(python-xlib 连接)."""
+        try:
+            opacity = clamp(int(clamp(opacity, 0.0, 1.0) * 0xFFFFFFFF),
+                            0, 0xFFFFFFFF)
+            self.win.change_property(
+                self.dpy.intern_atom('_NET_WM_WINDOW_OPACITY'),
+                X.XA_CARDINAL, 32, [opacity])
             self.dpy.flush()
         except XError:
             pass
@@ -228,13 +266,15 @@ class CoverBar:
         """
         try:
             x, y = cfg['x'], cfg['y']
-            # 窗口真实尺寸: resize 时 X 窗口大小异步变化, put 必须与
-            # 窗口当前实际尺寸一致, 否则 BadMatch 导致纯色/黑来回闪跳
+            # 应用待处理几何: move/resize 与 put 同连接同顺序,
+            # 窗口尺寸与图像尺寸永远一致(修复 resize 黑闪)
+            if self.pending_geo is not None and self.fastx is not None:
+                pgx, pgy, pgw, pgh = self.pending_geo
+                self.fastx.move_resize_window(self.win.id,
+                                              pgx, pgy, pgw, pgh)
+                self._wh = (pgw, pgh)
+                self.pending_geo = None
             w, h = self._wh
-            if self.fastx is not None:
-                geo = self.fastx.get_geometry(self.win.id)
-                if geo:
-                    w, h = geo[2], geo[3]
             if w <= 0 or h <= 0:
                 return
 

@@ -63,11 +63,10 @@ class App:
         GLib.io_add_watch(ch, GLib.PRIORITY_DEFAULT, GLib.IO_IN,
                           self._on_x_readable)
 
-        # 面板与笔记窗口按需创建; _popup_gpos 记录其最近 GTK 位置
+        # 面板与笔记窗口按需创建
         self.panel = None
         self.notes_popup = None
         self.notes_viewer = None
-        self._popup_gpos = {}
 
         self._setup_dbus_screensaver()
 
@@ -382,7 +381,7 @@ class App:
                 nh = MIN_H
             self.cfg['x'], self.cfg['y'] = nx, ny
             self.cfg['w'], self.cfg['h'] = nw, nh
-            self.bar.move_resize(nx, ny, nw, nh)
+            self.bar.request_geometry(nx, ny, nw, nh)
             self.bar.set_locked(self.cfg['locked'], nw, nh)
             self._ensure_top_soon(throttle_ms=80)
             return
@@ -395,7 +394,7 @@ class App:
         ny = self.drag[3] + dy
         self.cfg['x'] = nx
         self.cfg['y'] = ny
-        self.bar.move_resize(nx, ny, self.cfg['w'], self.cfg['h'])
+        self.bar.request_geometry(nx, ny, self.cfg['w'], self.cfg['h'])
         self._ensure_top_soon(throttle_ms=80)
 
     # -------------------------------------------------- 状态修改入口
@@ -423,8 +422,8 @@ class App:
     def set_geometry(self, x, y, w, h):
         self.cfg['x'], self.cfg['y'] = int(x), int(y)
         self.cfg['w'], self.cfg['h'] = int(w), int(h)
-        self.bar.move_resize(self.cfg['x'], self.cfg['y'],
-                             self.cfg['w'], self.cfg['h'])
+        self.bar.request_geometry(self.cfg['x'], self.cfg['y'],
+                                  self.cfg['w'], self.cfg['h'])
         # 尺寸变化后同步 X input region, 否则新增区域会错误穿透
         self.bar.set_locked(self.cfg['locked'], self.cfg['w'], self.cfg['h'])
         save_config(self.cfg)
@@ -441,6 +440,7 @@ class App:
 
     def set_tint(self, rgb):
         self.cfg['tint_color'] = [int(c) for c in rgb]
+        self.bar.set_background_color(self.cfg['tint_color'])
         save_config(self.cfg)
 
     def set_tint_alpha(self, alpha):
@@ -458,6 +458,12 @@ class App:
     def set_noise(self, noise):
         self.cfg['noise'] = bool(noise)
         save_config(self.cfg)
+
+    def on_panel_closed(self):
+        """面板关闭(隐藏按钮/Esc)时恢复遮挡条显示."""
+        if self.cfg['visible'] and not self.locked_now:
+            self.bar.show()
+            self.bar.raise_top()
 
     # -------------------------------------------------- 位置预设
     def save_preset(self, name=None):
@@ -513,62 +519,6 @@ class App:
             self.panel.sync_from_config()
 
     # -------------------------------------------------- 弹窗与遮挡条的栈序
-    def _update_bar_stacking(self):
-        """面板/便签可见时, 把遮挡条压到其正下方 —— 弹窗不被遮挡条盖住,
-        遮挡条对其他所有窗口的置顶效果保持; 弹窗全部关闭后回栈顶."""
-        visible = [p for p in (self.panel, self.notes_popup, self.notes_viewer)
-                   if p is not None and p.get_visible()]
-        try:
-            if visible:
-                top = visible[-1]   # 最近弹出的弹窗
-                xid = top.get_window().get_xid()
-                xw = self.dpy.create_resource_object('window', xid)
-                # sibling 必须与遮挡条同为 root 的子窗口:
-                # 被 mutter reparent 进 frame 的窗口要取其 frame
-                parent = xw.query_tree().parent
-                sibling = xid if parent.id == self.root.id else parent.id
-                self.bar.win.configure(stack_mode=X.Below, sibling=sibling)
-            else:
-                self.bar.raise_top()
-            self.dpy.flush()
-        except XError:
-            pass
-
-    # -------------------------------------------------- 弹窗定位
-    def _place_away_from_bar(self, popup, gpos):
-        """显示后读回弹窗的 X 实际位置, 若与遮挡条相交则校正到其上方
-        (放不下则下方), 用 delta 相对修正, 不依赖 move 的绝对映射."""
-        try:
-            xid = popup.get_window().get_xid()
-            xw = self.dpy.create_resource_object('window', xid)
-            t = xw.translate_coords(self.root, 0, 0)
-            ax, ay = -t.x, -t.y               # 弹窗当前绝对位置
-            g = xw.get_geometry()
-            gw, gh = g.width, g.height
-        except XError:
-            return False
-        bx, by = self.cfg['x'], self.cfg['y']
-        bw, bh = self.bar._wh
-        if not (ax < bx + bw and ay < by + bh
-                and ax + gw > bx and ay + gh > by):
-            return False                      # 不相交, 无需处理
-        # 目标: 遮挡条上方居中; 上方放不下则下方
-        ty = by - gh - 16
-        if ty < 0:
-            ty = by + bh + 16
-        ty = max(0, min(ty, self.root_h - gh))
-        tx = max(0, min(bx + bw // 2 - gw // 2, self.root_w - gw))
-        scale = max(1, self.root_w / max(1, self._gtk_screen_width()))
-        gx, gy = gpos
-        nx, ny = gx + (tx - ax) / scale, gy + (ty - ay) / scale
-        popup.move(int(nx), int(ny))
-        self._popup_gpos[popup] = (nx, ny)
-        return False
-
-    def _remember_popup_pos(self, popup, gx, gy):
-        self._popup_gpos[popup] = (gx, gy)
-
-    # -------------------------------------------------- 控制面板
     def toggle_panel(self, root_x=None, root_y=None):
         import os
         if os.environ.get('SC_DEBUG'):
@@ -577,10 +527,15 @@ class App:
             self.panel = ControlPanel(self)
         if self.panel.get_visible():
             self.panel.hide()
-            self._update_bar_stacking()
+            # 关闭面板: 遮挡条带轮廓提示回归(用户配置了显示才恢复)
+            if self.cfg['visible'] and not self.locked_now:
+                self.bar.show()
+                self.bar.raise_top()
             return
         self.panel.sync_from_config()
-        # 初始位置: 鼠标附近(逻辑坐标), 显示后再做避让校正
+        # 打开面板: 隐藏遮挡条, 保证面板永远完整可见不被遮挡
+        self.bar.hide()
+        # 初始位置: 鼠标附近(逻辑坐标)
         scale = max(1, self.root_w / max(1, self._gtk_screen_width()))
         if root_x is not None:
             gx = max(8, min(root_x // scale,
@@ -590,12 +545,8 @@ class App:
         else:
             gx, gy = 60, 60
         self.panel.move(int(gx), int(gy))
-        self._popup_gpos[self.panel] = (gx, gy)
         self.panel.show_all()
         self.panel.present()
-        GLib.timeout_add(120, self._update_bar_stacking)
-        GLib.timeout_add(300, self._place_away_from_bar,
-                         self.panel, self._popup_gpos[self.panel])
 
     def _gtk_screen_width(self):
         """GTK 逻辑屏幕宽(GDK 在 HiDPI 下报逻辑分辨率)."""
@@ -629,19 +580,13 @@ class App:
         pos = self._place_on_bar_side()
         if pos and self.notes_popup is not None:
             self.notes_popup.move(int(pos[0]), int(pos[1]))
-            self._popup_gpos[self.notes_popup] = pos
-        GLib.timeout_add(120, self._update_bar_stacking)
-        GLib.timeout_add(300, self._place_away_from_bar,
-                         self.notes_popup,
-                         self._popup_gpos.get(self.notes_popup, (60, 60)))
-
+    
     def show_notes(self):
         if self.notes_viewer is not None and self.notes_viewer.get_visible():
             self.notes_viewer.present()
             return
         from .ui.notes import NotesViewer
         self.notes_viewer = NotesViewer(self)
-        GLib.timeout_add(120, self._update_bar_stacking)
 
     def _place_on_bar_side(self):
         """把笔记便签摆在遮挡条附近(GTK 逻辑坐标)."""

@@ -153,6 +153,17 @@ class FastX:
             return None
         return rx.value, ry.value, rw.value, rh.value
 
+    def move_resize_window(self, drawable, x, y, w, h):
+        """XMoveResizeWindow. 与 put 在同一连接内, 顺序由 X 协议保证,
+        因此"调整尺寸"与"写图"之间不会出现尺寸不一致的竞态."""
+        lib = self.lib
+        lib.XMoveResizeWindow.argtypes = [ctypes.c_void_p, ctypes.c_uint32,
+                                          ctypes.c_int, ctypes.c_int,
+                                          ctypes.c_uint, ctypes.c_uint]
+        lib.XMoveResizeWindow.restype = ctypes.c_int
+        lib.XMoveResizeWindow(self.dpy, drawable, x, y, w, h)
+        lib.XFlush(self.dpy)
+
     def window_origin(self, drawable):
         """窗口左上角的绝对位置(root 坐标系), 窗口销毁返回 None."""
         lib = self.lib

@@ -43,7 +43,10 @@ This fills that gap.
   `~/.local/share/subtitle-cover/`.
 - **Lock (mouse-through)**: the bar becomes fully click-transparent.
 - **Screensaver aware**: hides on lock/suspend, restores on unlock.
-- **Tray icon** when AppIndicator is available.
+- **Panel never blocked**: opening the control panel (right-click or
+  `Ctrl+Alt+C`) temporarily hides the bar itself — the panel is always fully
+  visible no matter where the bar sits; the bar returns with an outline hint
+  when the panel closes.
 - **Everything persists**: position, size, color, blur, fps, hotkeys.
 - **Lightweight**: pure Python + GTK3 + Pillow. <1% CPU when idle,
   ~4% of one core while a video plays, ~100-200 MB RAM.
