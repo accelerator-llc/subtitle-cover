@@ -91,10 +91,8 @@ class FastX:
         lib.XSetErrorHandler(self._err_cb)
         # XIO 错误处理器: 连接致命错误时打印并退出 —— libX11 默认行为
         # 是直接 exit(0) 且无任何输出, 排查问题会一头雾水
-        self.io_error = False
 
         def _xio_handler():
-            self.io_error = True
             import sys as _sys
             print('X 连接发生致命 IO 错误, 程序退出. '
                   '(如反复出现请到项目 issue 反馈)', file=_sys.stderr)

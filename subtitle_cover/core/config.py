@@ -23,7 +23,7 @@ DEFAULT_CONFIG = {
     'fps': 15,                     # 渲染上限 (帧/秒)
     'locked': False,               # 锁定: 鼠标事件完全穿透
     'visible': True,               # 遮挡条是否显示
-    'peek_key': 'o',               # 按住临时透视的组合键字母 (Ctrl+Alt+<key>)
+    'peek_key': 'o',               # 切换透视的组合键字母 (Ctrl+Alt+<key>)
     'note_with_shot': True,        # 快速笔记附带屏幕截图
     'notes_dir': '~/.local/share/subtitle-cover',
                                    # 笔记与截图的保存文件夹(支持 ~)
@@ -34,10 +34,11 @@ DEFAULT_CONFIG = {
 
 # 全局热键 (keysym 字符, 修饰掩码), 可在 config.json 中改为其他键
 DEFAULT_HOTKEYS = {
-    'show': 'b',   # Ctrl+Alt+B       显示/隐藏
-    'lock': 'l',   # Ctrl+Alt+Shift+L 锁定/解锁
-    'note': 'n',   # Ctrl+Alt+N       快速笔记
-    'panel': 'c',  # Ctrl+Alt+C       控制面板(锁定时也能呼出)
+    'show': 'b',    # Ctrl+Alt+B       显示/隐藏
+    'lock': 'l',    # Ctrl+Alt+Shift+L 锁定/解锁 (Ctrl+Alt+L 是 GNOME 锁屏, 故意错开)
+    'note': 'n',    # Ctrl+Alt+N       快速笔记
+    'panel': 'c',   # Ctrl+Alt+C       控制面板(锁定穿透时也能呼出)
+    'preset': 'p',  # Ctrl+Alt+P       位置预设循环
 }
 
 MIN_W, MIN_H = 120, 8              # 遮挡条最小尺寸

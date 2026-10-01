@@ -7,7 +7,7 @@ gi.require_version('Gtk', '3.0')
 gi.require_version('Gdk', '3.0')
 from gi.repository import Gtk, Gdk  # noqa: E402
 
-from ..core.config import MIN_W, MIN_H, MAX_BLUR, MAX_FEATHER
+from ..core.config import MIN_W, MIN_H, MAX_BLUR
 
 
 class ControlPanel(Gtk.Window):
@@ -28,15 +28,15 @@ class ControlPanel(Gtk.Window):
         row = 0
         # ---- 显示 / 锁定 ------------------------------------------------
         self.sw_visible = Gtk.Switch()
-        self.sw_locked = Gtk.Switch()
+        self.sw_input_locked = Gtk.Switch()
         grid.attach(Gtk.Label(label='显示遮挡条', halign=Gtk.Align.END),
                     0, row, 1, 1)
         grid.attach(self.sw_visible, 1, row, 1, 1)
         grid.attach(Gtk.Label(label='锁定 (鼠标穿透)', halign=Gtk.Align.END),
                     2, row, 1, 1)
-        grid.attach(self.sw_locked, 3, row, 1, 1)
+        grid.attach(self.sw_input_locked, 3, row, 1, 1)
         self.sw_visible.connect('state-set', self._on_visible)
-        self.sw_locked.connect('state-set', self._on_locked)
+        self.sw_input_locked.connect('state-set', self._on_input_locked)
 
         # ---- 几何 --------------------------------------------------------
         row += 1
@@ -139,13 +139,16 @@ class ControlPanel(Gtk.Window):
         grid.attach(self.scale_fps, 1, row, 1, 1)
         self.scale_fps.connect('value-changed', self._on_fps)
 
-        # ---- 操作说明 ----------------------------------------------------
+        # ---- 操作说明 / 热键清单 -----------------------------------------
+        # 热键部分从 config 动态生成(动作+组合键+注册状态), 与实际注册一致
         row += 1
         tips = ('操作: 左键拖动移动 · 边缘拖拽调大小 · 滚轮调高度 · '
                 'Shift+滚轮调宽 · Ctrl+滚轮调模糊\n'
-                '中键按住 透视 / 单击锁定 · 右键 开本面板\n'
-                '热键: Ctrl+Alt+B 显隐 · Ctrl+Alt+Shift+L 锁定 · '
-                'Ctrl+Alt+O 按住透视 · Ctrl+Alt+N 笔记')
+                '中键按住 透视 · 右键 开本面板\n'
+                + self._hotkey_tips() + '\n'
+                '锁定时鼠标点击会穿透到下层窗口, '
+                '用 ' + self.app.hotkey_label('panel', 'c')
+                + ' 呼出本面板')
         grid.attach(Gtk.Label(label=tips, wrap=True, halign=Gtk.Align.START,
                               valign=Gtk.Align.CENTER), 0, row, 4, 1)
 
@@ -186,6 +189,31 @@ class ControlPanel(Gtk.Window):
     # sync_from_config 刷新控件时会触发 value-changed,
     # 用 _syncing 标志防止"面板刷新 -> 改配置 -> 再刷新"的回环.
 
+    def _hotkey_tips(self):
+        """从 config 动态生成完整热键清单(动作+组合键+注册状态).
+
+        注册状态读 App.hotkey_status(启动时 XGrabKey 的实测结果),
+        失败的键标注「注册失败(可能被系统占用)」."""
+        hk = self.app.cfg.get('hotkeys', {})
+        status = getattr(self.app, 'hotkey_status', {})
+        items = [
+            ('显隐', self.app.hotkey_label('show', 'b'), 'show'),
+            ('锁定穿透', self.app.hotkey_label('lock', 'l', shift=True), 'lock'),
+            ('切换透视', self.app.hotkey_label('peek', 'o'), 'peek'),
+            ('笔记', self.app.hotkey_label('note', 'n'), 'note'),
+            ('本面板', self.app.hotkey_label('panel', 'c'), 'panel'),
+            ('预设循环', self.app.hotkey_label('preset', 'p'), 'preset'),
+        ]
+        parts = []
+        for label, combo, action in items:
+            if hk.get(action) is False:      # config 显式置空: 用户停用
+                continue
+            text = '%s %s' % (combo, label)
+            if status.get(action, True) is False:
+                text += '〔注册失败, 可能被系统占用〕'
+            parts.append(text)
+        return '热键: ' + ' · '.join(parts)
+
     def _synced(self):
         return getattr(self, '_syncing', False)
 
@@ -207,9 +235,9 @@ class ControlPanel(Gtk.Window):
         if not self._synced():
             self.app.set_visible(state)
 
-    def _on_locked(self, sw, state):
+    def _on_input_locked(self, sw, state):
         if not self._synced():
-            self.app.set_locked(state)
+            self.app.set_input_locked(state)
 
     def _on_geometry(self, *a):
         if self._synced():
@@ -332,14 +360,16 @@ class ControlPanel(Gtk.Window):
     def sync_from_config(self):
         """把 app 当前配置反映到面板控件."""
         cfg = self.app.cfg
+        # 运行期几何从 app.geo 读取(App 的配置边界收敛, ARCH D3)
+        gx, gy, gw, gh = self.app.geo
         self._syncing = True
         try:
             self.sw_visible.set_active(cfg['visible'])
-            self.sw_locked.set_active(cfg['locked'])
-            self.spin_x.set_value(cfg['x'])
-            self.spin_y.set_value(cfg['y'])
-            self.spin_w.set_value(cfg['w'])
-            self.spin_h.set_value(cfg['h'])
+            self.sw_input_locked.set_active(cfg['locked'])
+            self.spin_x.set_value(gx)
+            self.spin_y.set_value(gy)
+            self.spin_w.set_value(gw)
+            self.spin_h.set_value(gh)
             self.scale_blur.set_value(cfg['blur'])
             self.scale_alpha.set_value(cfg['tint_alpha'] * 100)
             self.scale_fps.set_value(cfg['fps'])

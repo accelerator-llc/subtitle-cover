@@ -14,15 +14,12 @@ import gi
 try:
     gi.require_version('AyatanaAppIndicator3', '0.1')
     from gi.repository import AyatanaAppIndicator3 as AppIndicator
-    _BACKEND = 'ayatana'
 except (ValueError, ImportError):
     try:
         gi.require_version('AppIndicator3', '0.1')
         from gi.repository import AppIndicator3 as AppIndicator
-        _BACKEND = 'legacy'
     except (ValueError, ImportError):
         AppIndicator = None
-        _BACKEND = None
 
 from gi.repository import Gtk  # noqa: E402
 
@@ -55,7 +52,6 @@ class Tray:
     def __init__(self, app):
         self.app = app
         self.ind = None
-        self._notes_hint = 0
         if AppIndicator is None:
             return
         icon_path = os.path.join(CONFIG_DIR, 'icon.png')
@@ -73,9 +69,9 @@ class Tray:
         self.mi_visible = Gtk.CheckMenuItem(label='显示遮挡条 (Ctrl+Alt+B)')
         self.mi_visible.set_active(self.app.cfg['visible'])
         self.mi_visible.connect('toggled', self._on_visible)
-        self.mi_locked = Gtk.CheckMenuItem(label='锁定 (鼠标穿透, Ctrl+Alt+Shift+L)')
-        self.mi_locked.set_active(self.app.cfg['locked'])
-        self.mi_locked.connect('toggled', self._on_locked)
+        self.mi_input_locked = Gtk.CheckMenuItem(label='锁定 (鼠标穿透, Ctrl+Alt+Shift+L)')
+        self.mi_input_locked.set_active(self.app.cfg['locked'])
+        self.mi_input_locked.connect('toggled', self._on_input_locked)
 
         mi_panel = Gtk.MenuItem(label='控制面板')
         mi_panel.connect('activate', self._on_panel)
@@ -86,7 +82,7 @@ class Tray:
         mi_quit = Gtk.MenuItem(label='退出')
         mi_quit.connect('activate', self._on_quit)
 
-        for item in (self.mi_visible, self.mi_locked,
+        for item in (self.mi_visible, self.mi_input_locked,
                      Gtk.SeparatorMenuItem(), mi_panel, mi_note,
                      mi_noteview, Gtk.SeparatorMenuItem(), mi_quit):
             m.append(item)
@@ -97,8 +93,8 @@ class Tray:
     def _on_visible(self, item):
         self.app.set_visible(item.get_active())
 
-    def _on_locked(self, item):
-        self.app.set_locked(item.get_active())
+    def _on_input_locked(self, item):
+        self.app.set_input_locked(item.get_active())
 
     def _on_panel(self, *a):
         self.app.toggle_panel()
@@ -119,7 +115,7 @@ class Tray:
             return
         try:
             self.mi_visible.set_active(self.app.cfg['visible'])
-            self.mi_locked.set_active(self.app.cfg['locked'])
+            self.mi_input_locked.set_active(self.app.cfg['locked'])
         except AttributeError:
             pass
 

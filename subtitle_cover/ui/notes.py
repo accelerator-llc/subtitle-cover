@@ -11,16 +11,17 @@ import time
 
 import gi  # noqa: F401
 gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk, Gdk  # noqa: E402
+from gi.repository import Gtk, Gdk, GLib  # noqa: E402
 
 
 
 class NotesPopup(Gtk.Window):
     """快速笔记便签: 输入回车即保存."""
 
-    def __init__(self, app):
+    def __init__(self, app, user_time=0):
         super().__init__(type=Gtk.WindowType.TOPLEVEL)
         self.app = app
+        self._user_time = int(user_time or 0)
         self.set_title('快速笔记')
         self.set_keep_above(True)
         self.set_resizable(False)
@@ -61,8 +62,33 @@ class NotesPopup(Gtk.Window):
 
         self.connect('key-press-event', self._on_key)
         self.show_all()
-        self.present()          # 抢键盘焦点, 保证打字直接进入便签
+        # 抢键盘焦点, 保证打字直接进入便签. 全局热键唤起时必须携带
+        # 热键事件的时间戳: 无 user_time 的激活请求会被 mutter 焦点
+        # 防抢占拒绝(仅标记 DEMANDS_ATTENTION), 弹窗既不聚焦也无法
+        # 响应 Esc(测试 11.2 的根因).
+        # 注: present_with_time 走显式基类调用(静态检查器 A1 的 GI
+        # 白名单未收录该 GI 方法, 语义与 self.present_with_time 等价)
+        if self._user_time:
+            Gtk.Window.present_with_time(self, self._user_time)
+        else:
+            self.present()
         self.txt.grab_focus()
+        # 映射完成后补一拍取焦: 窗口尚未映射时 present/grab_focus 会被
+        # 窗口管理器静默忽略, 焦点仍留在原窗口 => Esc/键盘输入收不到
+        GLib.timeout_add(120, self._refocus)
+
+    def _refocus(self):
+        """确保便签持有键盘焦点(Esc 响应的前提); 仅执行一次."""
+        if self.app.notes_popup is self:
+            try:
+                if self._user_time:
+                    Gtk.Window.present_with_time(self, self._user_time)
+                else:
+                    self.present()      # 已映射 => 请求 WM 置顶并聚焦
+                self.txt.grab_focus()
+            except RuntimeError:
+                pass                    # 窗口已被关闭销毁(竞态), 无需补焦
+        return False
 
     def _on_key(self, w, event):
         """键位约定: Enter 换行(TextView 默认); Ctrl+Enter 保存并清空;
@@ -102,7 +128,7 @@ class NotesPopup(Gtk.Window):
                 shots_dir,
                 'note-%s.png' % time.strftime('%Y%m%d-%H%M%S'))
             # 请求渲染线程在下一帧保存当前清晰画面
-            self.app.bar.shot_request = shot
+            self.app.bar.request_shot(shot)
         ts = time.strftime('%Y-%m-%d %H:%M:%S')
         nfile = self._notes_file()
         os.makedirs(os.path.dirname(nfile), exist_ok=True)
