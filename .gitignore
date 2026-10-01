@@ -3,3 +3,19 @@ __pycache__/
 .deps/
 *.tmp
 docs/REFACTOR_LOG.md
+
+# 编辑器 / AI 工具工作区
+.vscode/
+.idea/
+.cursor/
+.claude/
+
+# Python 虚拟环境
+.venv/
+venv/
+
+# 系统与临时杂物
+.DS_Store
+Thumbs.db
+*.log
+*.deb
