@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 .deps/
 *.tmp
+docs/REFACTOR_LOG.md
