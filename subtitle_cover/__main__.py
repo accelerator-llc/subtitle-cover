@@ -7,6 +7,12 @@ import sys
 from subtitle_cover.core.config import CONFIG_DIR, LOCK_FILE
 
 
+# 模块级引用: 必须存活到进程结束. flock 随 fd 关闭而释放, 若文件对象
+# 被 GC(如之前的 del lock)则单实例保护立刻失效 —— 会出现多个实例同时
+# 抢全局热键(后启动者 XGrabKey 全部 BadAccess)并互相覆盖配置.
+_LOCK = None
+
+
 def acquire_single_instance_lock():
     """单实例锁: 重复启动时直接退出并提示."""
     import fcntl
@@ -23,8 +29,8 @@ def acquire_single_instance_lock():
 
 
 def main():
-    lock = acquire_single_instance_lock()
-    del lock
+    global _LOCK
+    _LOCK = acquire_single_instance_lock()
     from Xlib.error import DisplayError
     try:
         from subtitle_cover.app import App

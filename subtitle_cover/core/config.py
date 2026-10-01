@@ -42,7 +42,6 @@ DEFAULT_HOTKEYS = {
 
 MIN_W, MIN_H = 120, 8              # 遮挡条最小尺寸
 MAX_BLUR = 50
-MAX_FEATHER = 64
 
 
 def clamp(v, lo, hi):
@@ -59,6 +58,14 @@ def load_config():
         for k in cfg:
             if k in data:
                 cfg[k] = data[k]
+        # hotkeys 是整体覆盖: 老版本配置可能只存了部分键, 补齐默认值,
+        # 否则面板/笔记热键会静默消失且被再次写回配置
+        hk = cfg.get('hotkeys')
+        if not isinstance(hk, dict):
+            hk = {}
+        for k, v in DEFAULT_HOTKEYS.items():
+            hk.setdefault(k, v)
+        cfg['hotkeys'] = hk
     except (OSError, ValueError):
         pass
     return cfg
